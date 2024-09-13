@@ -1,0 +1,91 @@
+Question 1: Are Django signals executed synchronously or asynchronously by default?
+
+Ans-By default, Django signals are executed synchronously. This means that when a signal is emitted, the corresponding signal handlers are executed immediately, blocking the main thread until the handlers complete.
+
+# signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth.models import User
+import time
+
+@receiver(post_save, sender=User)
+def my_signal_handler(sender, instance, **kwargs):
+    print("Signal handler started")
+    time.sleep(2)  # Simulate a long-running task
+    print("Signal handler finished")
+
+# views.py
+from django.contrib.auth.models import User
+from django.http import HttpResponse
+
+def test_view(request):
+    print("Before creating user")
+    user = User.objects.create(username="testuser")
+    print("After creating user")
+    return HttpResponse("Done")
+
+-------------------------------------------------------------------------
+
+Question 2: Do Django signals run in the same thread as the caller?
+
+Ans-We can use Python's threading module to check if the signal handler and the view are running in the same thread.
+
+# signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth.models import User
+import threading
+
+@receiver(post_save, sender=User)
+def my_signal_handler(sender, instance, **kwargs):
+    print("Signal handler thread:", threading.current_thread().name)
+
+# views.py
+from django.contrib.auth.models import User
+from django.http import HttpResponse
+import threading
+
+def test_view(request):
+    print("View thread:", threading.current_thread().name)
+    user = User.objects.create(username="testuser")
+    return HttpResponse("Done")
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+Question 3: Do Django signals run in the same database transaction as the caller?
+
+Ans-# models.py
+from django.db import models
+
+class Log(models.Model):
+    message = models.CharField(max_length=255)
+
+# signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth.models import User
+from .models import Log
+
+@receiver(post_save, sender=User)
+def log_user_creation(sender, instance, **kwargs):
+    Log.objects.create(message=f"User {instance.username} created")
+
+# views.py
+from django.contrib.auth.models import User
+from django.http import HttpResponse
+from django.db import transaction
+from .models import Log
+
+def test_view(request):
+    try:
+        with transaction.atomic():
+            user = User.objects.create(username="testuser")
+            raise Exception("Simulating an error")
+    except Exception:
+        pass
+    # Check if the Log entry was created
+    log_count = Log.objects.count()
+    return HttpResponse(f"Log count: {log_count}")
+
+
+-------------------------------------------------------------------------------------------------------------
